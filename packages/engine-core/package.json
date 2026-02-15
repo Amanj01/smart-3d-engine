@@ -1,0 +1,29 @@
+{
+  "name": "@3d-engine/core",
+  "version": "0.1.0",
+  "description": "AI-native 3D rendering engine core — WebGPU/WebGL renderer with adaptive performance",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "clean": "rm -rf dist .turbo"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.0",
+    "typescript": "^5.7.0",
+    "@webgpu/types": "^0.1.49"
+  },
+  "license": "MIT",
+  "sideEffects": false
+}
