@@ -73,10 +73,14 @@ export function SmartMesh({
   const { scene, parentNode } = useScene();
   const nodeRef = useRef<SceneNode | null>(null);
 
+  // Keep a stable ref for onGenerate so it doesn't trigger the effect
+  const onGenerateRef = useRef(onGenerate);
+  onGenerateRef.current = onGenerate;
+
   const budgetMs = budget ? parseFloat(budget) : 4;
 
+  // Create the scene node once (on mount or when engine/scene changes)
   useEffect(() => {
-    // Start with a placeholder mesh
     const placeholderOptions = createBoxMesh(0.5, 0.5, 0.5);
     const mesh = createMesh(placeholderOptions);
     mesh.uploadToGPU(engine.ctx);
@@ -98,44 +102,53 @@ export function SmartMesh({
     node.setDirty();
     nodeRef.current = node;
 
-    // Try AI generation
-    if (onGenerate) {
-
-      onGenerate(prompt)
-        .then((generated) => {
-          if (!nodeRef.current) return;
-
-          mesh.destroy(engine.ctx);
-
-          const aiMesh = createMesh({
-            name: `ai_${prompt.slice(0, 20)}`,
-            positions: generated.positions,
-            normals: generated.normals,
-            uvs: generated.uvs,
-            indices: generated.indices,
-          });
-
-          // Generate LOD for AI meshes (they tend to be heavy)
-          aiMesh.lodLevels = generateLODLevels(aiMesh.geometryData);
-          aiMesh.uploadToGPU(engine.ctx);
-
-          nodeRef.current.mesh = aiMesh;
-          if (material) {
-            nodeRef.current.material = createMaterial(material);
-          }
-          nodeRef.current.setDirty();
-        })
-        .catch(() => {
-          // Keep placeholder
-        });
-    }
-
     return () => {
       node.mesh?.destroy(engine.ctx);
       scene.removeNode(node);
       nodeRef.current = null;
     };
-  }, [prompt, onGenerate, engine, scene, parentNode, importance, budgetMs, placeholder]);
+  }, [engine, scene, parentNode]);
+
+  // Run generation only when prompt changes (not when onGenerate ref changes)
+  useEffect(() => {
+    if (!prompt) return;
+    const gen = onGenerateRef.current;
+    if (!gen) return;
+
+    let cancelled = false;
+
+    gen(prompt)
+      .then((generated) => {
+        if (cancelled || !nodeRef.current) return;
+
+        const node = nodeRef.current;
+        node.mesh?.destroy(engine.ctx);
+
+        const aiMesh = createMesh({
+          name: `ai_${prompt.slice(0, 20)}`,
+          positions: generated.positions,
+          normals: generated.normals,
+          uvs: generated.uvs,
+          indices: generated.indices,
+        });
+
+        aiMesh.lodLevels = generateLODLevels(aiMesh.geometryData);
+        aiMesh.uploadToGPU(engine.ctx);
+
+        node.mesh = aiMesh;
+        if (material) {
+          node.material = createMaterial(material);
+        }
+        node.setDirty();
+      })
+      .catch((err) => {
+        console.error("[SmartMesh] Generation failed:", err);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [prompt, engine]);
 
   // Update transform
   useEffect(() => {

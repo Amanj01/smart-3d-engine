@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useMemo } from "react";
 import {
   EngineProvider,
   Scene,
@@ -8,12 +8,13 @@ import {
   PerformanceOverlay,
   useFrame,
 } from "@3d-engine/react";
-import { createProceduralGenerator } from "@3d-engine/ai";
+import { createProceduralGenerator, createTripoGenerator } from "@3d-engine/ai";
+import type { MeshGenerator } from "@3d-engine/ai";
 import type { Engine } from "@3d-engine/core";
 
-// ── AI Generator ────────────────────────────────────────────────
+// ── AI Generators ───────────────────────────────────────────────
 
-const aiGenerator = createProceduralGenerator({ maxPolygons: 3000 });
+const proceduralGenerator = createProceduralGenerator({ maxPolygons: 3000 });
 
 // ── Helper: Y-axis rotation to quaternion ───────────────────────
 
@@ -131,6 +132,14 @@ function ControlPanel({
   setShowPillars,
   smartPrompt,
   setSmartPrompt,
+  useTripo,
+  setUseTripo,
+  tripoKey,
+  setTripoKey,
+  tripoPrompt,
+  setTripoPrompt,
+  onTripoGenerate,
+  tripoStatus,
 }: {
   adaptive: boolean;
   setAdaptive: (v: boolean) => void;
@@ -140,7 +149,26 @@ function ControlPanel({
   setShowPillars: (v: boolean) => void;
   smartPrompt: string;
   setSmartPrompt: (v: string) => void;
+  useTripo: boolean;
+  setUseTripo: (v: boolean) => void;
+  tripoKey: string;
+  setTripoKey: (v: string) => void;
+  tripoPrompt: string;
+  setTripoPrompt: (v: string) => void;
+  onTripoGenerate: () => void;
+  tripoStatus: string;
 }) {
+  const inputStyle: React.CSSProperties = {
+    padding: "4px 10px",
+    background: "#181820",
+    color: "#ccd",
+    border: "1px solid #333",
+    borderRadius: 6,
+    fontSize: 12,
+    width: "100%",
+    boxSizing: "border-box",
+  };
+
   return (
     <div
       style={{
@@ -154,7 +182,8 @@ function ControlPanel({
         fontSize: 13,
         lineHeight: 2,
         zIndex: 10000,
-        minWidth: 280,
+        minWidth: 300,
+        maxWidth: 340,
         border: "1px solid rgba(100,120,255,0.15)",
         backdropFilter: "blur(12px)",
         boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
@@ -207,27 +236,114 @@ function ControlPanel({
         Corner Pillars
       </label>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={{ color: "#999" }}>AI Mesh:</span>
-        <select
-          value={smartPrompt}
-          onChange={(e) => setSmartPrompt(e.target.value)}
-          style={{
-            padding: "3px 10px",
-            background: "#181820",
-            color: "#ccd",
-            border: "1px solid #333",
-            borderRadius: 6,
-            fontSize: 12,
-          }}
-        >
-          <option value="torus ring">Torus Ring</option>
-          <option value="crystal pyramid">Crystal Pyramid</option>
-          <option value="floating island">Floating Island</option>
-          <option value="ancient rock">Ancient Rock</option>
-          <option value="organic blob">Organic Shape</option>
-          <option value="tree plant">Tree</option>
-        </select>
+      {/* ── AI Mesh Source Toggle ── */}
+      <div style={{ marginTop: 8, borderTop: "1px solid #333", paddingTop: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+          <span style={{ fontWeight: 600, color: "#8af", fontSize: 13 }}>AI Mesh</span>
+          <button
+            onClick={() => setUseTripo(false)}
+            style={{
+              padding: "2px 10px",
+              border: !useTripo ? "1px solid #6af" : "1px solid #333",
+              borderRadius: 6,
+              background: !useTripo ? "linear-gradient(135deg, #1a3a6a, #0d2040)" : "#181820",
+              color: !useTripo ? "#8cf" : "#888",
+              cursor: "pointer",
+              fontSize: 11,
+              fontWeight: !useTripo ? 600 : 400,
+            }}
+          >
+            Procedural
+          </button>
+          <button
+            onClick={() => setUseTripo(true)}
+            style={{
+              padding: "2px 10px",
+              border: useTripo ? "1px solid #a6f" : "1px solid #333",
+              borderRadius: 6,
+              background: useTripo ? "linear-gradient(135deg, #3a1a6a, #200d40)" : "#181820",
+              color: useTripo ? "#c8f" : "#888",
+              cursor: "pointer",
+              fontSize: 11,
+              fontWeight: useTripo ? 600 : 400,
+            }}
+          >
+            Tripo AI
+          </button>
+        </div>
+
+        {!useTripo ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ color: "#999" }}>Shape:</span>
+            <select
+              value={smartPrompt}
+              onChange={(e) => setSmartPrompt(e.target.value)}
+              style={inputStyle}
+            >
+              <option value="torus ring">Torus Ring</option>
+              <option value="crystal pyramid">Crystal Pyramid</option>
+              <option value="floating island">Floating Island</option>
+              <option value="ancient rock">Ancient Rock</option>
+              <option value="organic blob">Organic Shape</option>
+              <option value="tree plant">Tree</option>
+            </select>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <input
+              type="password"
+              placeholder="Tripo API key (tsk_...)"
+              value={tripoKey}
+              onChange={(e) => setTripoKey(e.target.value)}
+              style={inputStyle}
+            />
+            <div style={{ display: "flex", gap: 6 }}>
+              <input
+                type="text"
+                placeholder="Describe any 3D object..."
+                value={tripoPrompt}
+                onChange={(e) => setTripoPrompt(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && onTripoGenerate()}
+                style={{ ...inputStyle, flex: 1 }}
+              />
+              <button
+                onClick={onTripoGenerate}
+                disabled={!tripoKey || !tripoPrompt || tripoStatus === "generating"}
+                style={{
+                  padding: "4px 14px",
+                  background: tripoKey && tripoPrompt
+                    ? "linear-gradient(135deg, #6a2aff, #4010c0)"
+                    : "#222",
+                  color: tripoKey && tripoPrompt ? "#fff" : "#555",
+                  border: "1px solid #444",
+                  borderRadius: 6,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: tripoKey && tripoPrompt ? "pointer" : "not-allowed",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {tripoStatus === "generating" ? "..." : "Generate"}
+              </button>
+            </div>
+            {tripoStatus && tripoStatus !== "idle" && (
+              <div
+                style={{
+                  fontSize: 11,
+                  color:
+                    tripoStatus === "done"
+                      ? "#5f5"
+                      : tripoStatus.startsWith("Error")
+                        ? "#f55"
+                        : "#aaf",
+                  lineHeight: 1.4,
+                }}
+              >
+                {tripoStatus}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div style={{ fontSize: 11, color: "#556", marginTop: 6 }}>
@@ -245,14 +361,40 @@ export function App() {
   const [showPillars, setShowPillars] = useState(true);
   const [smartPrompt, setSmartPrompt] = useState("torus ring");
 
+  // Tripo state — auto-load key from env if available
+  const envKey = import.meta.env.VITE_TRIPO_API_KEY ?? "";
+  const [useTripo, setUseTripo] = useState(!!envKey);
+  const [tripoKey, setTripoKey] = useState(envKey);
+  const [tripoPrompt, setTripoPrompt] = useState("a small computer mouse");
+  const [tripoActivePrompt, setTripoActivePrompt] = useState(""); // only set on Generate click
+  const [tripoStatus, setTripoStatus] = useState("idle");
+  const tripoGeneratorRef = useRef<MeshGenerator | null>(null);
+
+  // Memoize the Tripo generator when API key changes
+  const tripoGenerator = useMemo(() => {
+    if (!tripoKey) return null;
+    const gen = createTripoGenerator({
+      apiKey: tripoKey,
+      baseUrl: "/tripo-api", // proxied through Vite dev server
+      modelProxy: "/tripo-model-proxy", // proxied CDN downloads
+      timeout: 120_000,
+      pollInterval: 3000,
+    });
+    tripoGeneratorRef.current = gen;
+    return gen;
+  }, [tripoKey]);
+
   const handleReady = useCallback((engine: Engine) => {
     console.log(`[3D Engine] Ready | backend: ${engine.backend}`);
   }, []);
 
-  const handleGenerate = useCallback(
-    async (prompt: string) => aiGenerator.generate(prompt),
-    [],
-  );
+  // Handle Tripo generation — only fires when user clicks Generate
+  const handleTripoGenerate = useCallback(() => {
+    if (!tripoGenerator || !tripoPrompt) return;
+    setTripoStatus("generating");
+    // Use a unique key so SmartMesh detects the change even for the same prompt
+    setTripoActivePrompt(tripoPrompt + "#" + Date.now());
+  }, [tripoGenerator, tripoPrompt]);
 
   // Pillar positions in a circle
   const pillarCount = 6;
@@ -349,12 +491,28 @@ export function App() {
 
           {/* ── AI-generated mesh — front and center ── */}
           <SmartMesh
-            prompt={smartPrompt}
+            prompt={useTripo ? tripoActivePrompt : smartPrompt}
             position={[0, 0.6, 3]}
             scale={[1.5, 1.5, 1.5]}
             importance="high"
             budget="8ms"
-            onGenerate={handleGenerate}
+            onGenerate={async (rawPrompt) => {
+              if (useTripo && tripoGeneratorRef.current) {
+                // Strip the timestamp suffix we added for uniqueness
+                const cleanPrompt = rawPrompt.replace(/#\d+$/, "");
+                try {
+                  setTripoStatus("generating");
+                  const mesh = await tripoGeneratorRef.current.generate(cleanPrompt);
+                  setTripoStatus("done");
+                  return mesh;
+                } catch (err: unknown) {
+                  const msg = err instanceof Error ? err.message : String(err);
+                  setTripoStatus(`Error: ${msg}`);
+                  throw err;
+                }
+              }
+              return proceduralGenerator.generate(rawPrompt);
+            }}
             material={{
               baseColor: [0.55, 0.45, 0.85, 1.0],
               roughness: 0.3,
@@ -426,6 +584,14 @@ export function App() {
         setShowPillars={setShowPillars}
         smartPrompt={smartPrompt}
         setSmartPrompt={setSmartPrompt}
+        useTripo={useTripo}
+        setUseTripo={setUseTripo}
+        tripoKey={tripoKey}
+        setTripoKey={setTripoKey}
+        tripoPrompt={tripoPrompt}
+        setTripoPrompt={setTripoPrompt}
+        onTripoGenerate={handleTripoGenerate}
+        tripoStatus={tripoStatus}
       />
     </div>
   );
